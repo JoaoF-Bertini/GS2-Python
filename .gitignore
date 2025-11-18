@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# Artefatos gerados
+data/
+!data/examples/
+!data/examples/.gitkeep
