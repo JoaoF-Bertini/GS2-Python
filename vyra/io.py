@@ -50,3 +50,14 @@ def print_users_table(users: list[dict], max_rows: int = 10):
         skills = ", ".join(u.get("skills", [])[:5])
         ods = ",".join(str(x) for x in u.get("ods_interesse", []))
         print(f"{i:02d}. {u['nome']} | modo={u['modo']} | ODS={ods or '-'} | skills={skills or '-'}")
+
+def print_table(df, title: str = None, max_rows: int = 30):
+    """
+    Saída: print de um DataFrame tabular (analytics).
+    """
+    if title:
+        print(f"\n--- {title} ---")
+    if df is None or getattr(df, "empty", True):
+        print("(vazio)")
+        return
+    print(df.head(max_rows))

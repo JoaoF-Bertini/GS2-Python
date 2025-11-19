@@ -4,18 +4,31 @@ from vyra.world import collect_world_trends
 from vyra.users import collect_user_dna
 from vyra.recommend import recommend_careers
 from vyra.reports import build_recommendations_table, build_wide_from_long, export_csv
-from vyra.storage import ensure_dirs, save_users, load_users, REPORTS_DIR
+from vyra.storage import (
+    ensure_dirs, save_users, load_users, REPORTS_DIR,
+    save_careers_df, load_careers_df, save_trends, load_trends
+)
 from vyra.io import (
-    show_title, print_df, print_state_counts,
-    print_recommendations, print_users_table
+    show_title, print_df, print_state_counts, print_recommendations,
+    print_users_table, print_table
+)
+from vyra.analytics import (
+    state_counts, ods_distribution_by_state,
+    plot_state_counts, plot_ods_by_state
 )
 
 def main():
     show_title()
     ensure_dirs()
-    df_carreiras = create_careers_df()
-    world_trends = None
-    users: list[dict] = []  # DNAs cadastrados em memória
+
+    # Carrega ecossistema se existir, senão cria novo
+    df_loaded = load_careers_df()
+    df_carreiras = df_loaded if df_loaded is not None else create_careers_df()
+
+    trends_loaded = load_trends()
+    world_trends = trends_loaded if trends_loaded else None
+
+    users: list[dict] = []  # DNAs em memória
 
     while True:
         print("\nMenu")
@@ -28,6 +41,9 @@ def main():
         print("[7] Salvar DNAs em data/users.json")
         print("[8] Carregar DNAs de data/users.json")
         print("[9] Gerar relatório pandas (users × recomendações)")
+        print("[10] Salvar ecossistema (carreiras + estado) em data/careers.json")
+        print("[11] Carregar ecossistema de data/careers.json")
+        print("[12] Analytics & Gráficos (estados/ODS)")
         print("[0] Sair")
         opcao = input("Escolha: ").strip()
 
@@ -38,6 +54,8 @@ def main():
             world_trends = collect_world_trends()
             dbg = input("Ativar debug detalhado da atualização? (s/N): ").strip().lower() in ("s","sim","y","yes")
             df_carreiras = update_ecosystem_state(df_carreiras, world_trends, debug=dbg)
+            # salvar tendências para reuso futuro
+            save_trends(world_trends)
             print("\nEcossistema atualizado com sucesso!")
 
         elif opcao == "3":
@@ -55,7 +73,7 @@ def main():
             if not users:
                 print("Cadastre um DNA primeiro (opção [4]).")
                 continue
-            dna = users[-1]  # último cadastrado
+            dna = users[-1]
             dbg = input("Ativar debug do match? (s/N): ").strip().lower() in ("s","sim","y","yes")
             recs = recommend_careers(dna, df_carreiras, top_n=3, debug=dbg)
             print_recommendations(dna, recs)
@@ -75,24 +93,18 @@ def main():
             if not users:
                 print("Não há DNAs cadastrados. Use a opção [4] ou carregue com [8].")
                 continue
-            # monta a tabela longa
             df_long = build_recommendations_table(users, df_carreiras, top_n=3, debug=False)
             print_df(df_long, max_rows=20)
 
-            # opcional: gerar tabela larga (wide)
             want_wide = input("Gerar também tabela LARGA (rec_1..rec_3)? (s/N): ").strip().lower() in ("s","sim","y","yes")
             if want_wide:
                 df_wide = build_wide_from_long(df_long)
                 print_df(df_wide, max_rows=20)
 
-            # exportar CSV?
             want_csv = input("Exportar CSV do relatório? (s/N): ").strip().lower() in ("s","sim","y","yes")
             if want_csv:
-                default_name = "recomendacoes_long.csv" if not want_wide else "recomendacoes_long_e_wide.csv"
-                filename = input(f"Nome do arquivo (ENTER para {default_name}): ").strip() or default_name
-
                 if want_wide:
-                    # salvamos dois arquivos: long e wide
+                    from vyra.storage import REPORTS_DIR
                     path_long = REPORTS_DIR / "recomendacoes_long.csv"
                     path_wide = REPORTS_DIR / "recomendacoes_wide.csv"
                     export_csv(df_long, path_long)
@@ -100,9 +112,40 @@ def main():
                     print(f"CSV salvo: {path_long.resolve()}")
                     print(f"CSV salvo: {path_wide.resolve()}")
                 else:
-                    path = REPORTS_DIR / filename
-                    export_csv(df_long, path)
-                    print(f"CSV salvo: {path.resolve()}")
+                    filename = "recomendacoes_long.csv"
+                    export_csv(df_long, Path("data/reports") / filename)
+                    print(f"CSV salvo: {(Path('data/reports')/filename).resolve()}")
+
+        elif opcao == "10":
+            path = save_careers_df(df_carreiras)
+            print(f"Ecossistema salvo em: {path.resolve()}")
+
+        elif opcao == "11":
+            df_loaded = load_careers_df()
+            if df_loaded is None:
+                print("Arquivo data/careers.json não encontrado.")
+            else:
+                df_carreiras = df_loaded
+                print("Ecossistema carregado com sucesso.")
+
+            # tenta carregar tendências salvas
+            trends = load_trends()
+            if trends:
+                print(f"Tendências carregadas: {trends}")
+                world_trends = trends
+
+        elif opcao == "12":
+            # Tabelas
+            df_counts = state_counts(df_carreiras)
+            print_table(df_counts, title="Contagem por estado evolutivo")
+
+            df_ods = ods_distribution_by_state(df_carreiras)
+            print_table(df_ods, title="ODS por estado (long)")
+
+            # Gráficos
+            png1 = plot_state_counts(df_counts, Path("data/reports/estado_counts.png"))
+            png2 = plot_ods_by_state(df_ods, Path("data/reports/ods_por_estado.png"))
+            print(f"Gráficos gerados:\n - {png1.resolve()}\n - {png2.resolve()}")
 
         elif opcao == "0":
             print("Saindo... até a próxima! 👋")
